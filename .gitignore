@@ -1,0 +1,13 @@
+build/
+dist/
+*.user
+*.suo
+.vs/
+.vscode/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.dll
+*.pdb
+*.lib
+*.exp
