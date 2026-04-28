@@ -73,6 +73,20 @@ jobs:
           )
           echo obs-frontend-api.lib created successfully.
 
+          echo --- Generating w32-pthreads.lib ---
+          dumpbin /exports "%OBS_DIR%\bin\64bit\w32-pthreads.dll" > build\obs-lib\pthreads_exports_raw.txt
+          echo LIBRARY w32-pthreads > build\obs-lib\w32-pthreads.def
+          echo EXPORTS >> build\obs-lib\w32-pthreads.def
+          for /f "tokens=1,2,3,4" %%A in ('findstr /r "^[ ][ ]*[0-9]" build\obs-lib\pthreads_exports_raw.txt') do (
+            if not "%%D"=="" echo     %%D >> build\obs-lib\w32-pthreads.def
+          )
+          lib /def:build\obs-lib\w32-pthreads.def /out:build\obs-lib\w32-pthreads.lib /machine:x64
+          if not exist build\obs-lib\w32-pthreads.lib (
+            echo ERROR: Failed to create w32-pthreads.lib
+            exit /b 1
+          )
+          echo w32-pthreads.lib created successfully.
+
       - name: Configure
         shell: pwsh
         run: |
