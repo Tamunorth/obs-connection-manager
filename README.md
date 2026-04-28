@@ -20,7 +20,6 @@ OBS ships a built-in "Dynamically change bitrate to manage congestion (Beta)" ch
 | Configurable thresholds | No | Yes (upper, lower, step size) |
 | Step size | Hardcoded | Configurable, default 1000 kbps |
 | Operator alert when stream breaks | No | Red dock banner plus Windows toast |
-| Per-stream session log | No | Yes, one line per adjustment |
 | Live editable target | No | Yes, spinbox in the dock |
 
 ## Install
@@ -76,16 +75,6 @@ Three hotkeys are registered for development and testing. They're unbound by def
 | cm.run_selftest | Connection Manager: Run self-test (dev/test) |
 
 The self-test runs a scripted congestion curve against a synthetic 6000 kbps target, so you can see the dock badge cycle through HEALTHY, DEGRADING, AT_FLOOR, BREAKING, and back without needing a real stream.
-
-## Session log
-
-Every time the manager adjusts the bitrate, it writes a line to:
-
-```text
-%APPDATA%\obs-studio\plugin_config\obs-connection-manager\sessions\YYYYMMDD-HHMMSS.log
-```
-
-One file per stream. Each line records the decision (step-down, step-up, hold, breaking-enter, breaking-exit), the bitrate before and after, the congestion value, and the state. Useful for post-event review when something went wrong and you want to know whether the network or the operator is to blame.
 
 ## Build from source
 
