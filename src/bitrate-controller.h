@@ -21,6 +21,7 @@ float cm_bitrate_read_congestion(void);
 int cm_bitrate_read_dropped(void);
 int cm_bitrate_read_total_frames(void);
 int cm_bitrate_read_connect_time_ms(void);
+unsigned long long cm_bitrate_read_total_bytes(void);
 
 #ifdef __cplusplus
 }

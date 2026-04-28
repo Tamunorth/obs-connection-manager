@@ -14,8 +14,10 @@
 #include "dock.h"
 #include "notification-bridge.h"
 #include "connection-monitor.h"
+#include "bitrate-controller.h"
 #include "settings-store.h"
 #include "cm-types.h"
+#include <util/platform.h>
 
 class CmDock : public QWidget {
 public:
@@ -44,6 +46,12 @@ public:
 			"font-size: 22px; font-weight: bold; color: #fff;");
 		current_label->setAlignment(Qt::AlignCenter);
 		root->addWidget(current_label);
+
+		configured_label = new QLabel("configured —", this);
+		configured_label->setStyleSheet(
+			"color: #777; font-size: 10px;");
+		configured_label->setAlignment(Qt::AlignCenter);
+		root->addWidget(configured_label);
 
 		/* Editable target row */
 		auto *target_row = new QHBoxLayout();
@@ -128,12 +136,26 @@ public:
 		QMetaObject::invokeMethod(
 			this,
 			[this, s]() {
-				if (s.current_kbps > 0)
+				/* Live measured bitrate (matches OBS bottom counter) */
+				int live = compute_live_kbps();
+				if (s.streaming && live > 0)
+					current_label->setText(
+						QString("%1 kbps")
+							.arg(live));
+				else if (s.current_kbps > 0)
 					current_label->setText(
 						QString("%1 kbps")
 							.arg(s.current_kbps));
 				else
 					current_label->setText("— kbps");
+
+				if (s.current_kbps > 0)
+					configured_label->setText(
+						QString("configured %1 kbps")
+							.arg(s.current_kbps));
+				else
+					configured_label->setText(
+						"configured —");
 
 				if (s.floor_kbps > 0)
 					floor_label->setText(
@@ -186,6 +208,47 @@ private:
 		apply_state(s);
 	}
 
+	/* Live throughput in kbps. Samples over a 1-second window (matches
+	 * OBS's status-bar refresh) with light EMA smoothing on top. The
+	 * dock polls at 4Hz; the displayed value only refreshes once per
+	 * full window. */
+	int compute_live_kbps()
+	{
+		const uint64_t WINDOW_NS = 1000000000ULL; /* 1 s */
+		uint64_t bytes = cm_bitrate_read_total_bytes();
+		uint64_t now = os_gettime_ns();
+
+		if (window_start_bytes == 0 || bytes < window_start_bytes) {
+			window_start_bytes = bytes;
+			window_start_ns = now;
+			return cached_kbps;
+		}
+
+		uint64_t dt_ns = now - window_start_ns;
+		if (dt_ns < WINDOW_NS)
+			return cached_kbps;
+
+		uint64_t db = bytes - window_start_bytes;
+		double seconds = (double)dt_ns / 1.0e9;
+		double sample = ((double)db * 8.0) / 1000.0 / seconds;
+		if (sample < 0)
+			sample = 0;
+
+		/* EMA: alpha=0.5 gives noticeable smoothing but still responsive. */
+		if (cached_kbps < 0)
+			cached_kbps = (int)(sample + 0.5);
+		else
+			cached_kbps = (int)(cached_kbps * 0.5 + sample * 0.5 + 0.5);
+
+		window_start_bytes = bytes;
+		window_start_ns = now;
+		return cached_kbps;
+	}
+
+	uint64_t window_start_bytes = 0;
+	uint64_t window_start_ns = 0;
+	int cached_kbps = -1;
+
 	static QString state_style(enum cm_state s)
 	{
 		const char *bg = "#444";
@@ -219,6 +282,7 @@ private:
 
 	QLabel *banner;
 	QLabel *current_label;
+	QLabel *configured_label;
 	QSpinBox *target_spin;
 	QLabel *floor_label;
 	QLabel *state_label;

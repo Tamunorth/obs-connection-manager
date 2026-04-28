@@ -25,7 +25,7 @@ void cm_settings_init_defaults(struct cm_settings *out)
 	out->notify_banner = true;
 	out->notify_toast = true;
 	out->auto_disable_obs_dbr = true;
-	out->selftest_on_load = true;
+	out->selftest_on_load = false;
 }
 
 static const char *get_config_path(void)

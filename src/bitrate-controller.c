@@ -125,3 +125,10 @@ int cm_bitrate_read_connect_time_ms(void)
 		return 0;
 	return obs_output_get_connect_time_ms(attached_output);
 }
+
+unsigned long long cm_bitrate_read_total_bytes(void)
+{
+	if (!attached_output)
+		return 0;
+	return (unsigned long long)obs_output_get_total_bytes(attached_output);
+}

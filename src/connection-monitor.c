@@ -158,14 +158,28 @@ static void tick(void)
 	const char *decision = "hold";
 
 	if (s->enabled && runtime.target_kbps > 0) {
-		if ((new_state == CM_DEGRADING || new_state == CM_AT_FLOOR ||
-		     new_state == CM_BREAKING) &&
-		    runtime.current_kbps > runtime.floor_kbps &&
+		bool above_ceiling =
+			runtime.current_kbps > runtime.target_kbps;
+		bool congestion_says_down =
+			(new_state == CM_DEGRADING ||
+			 new_state == CM_AT_FLOOR ||
+			 new_state == CM_BREAKING);
+		bool can_step_down =
+			runtime.current_kbps > runtime.floor_kbps;
+
+		if ((above_ceiling || congestion_says_down) && can_step_down &&
 		    (t - last_step_down_ms) >= s->step_down_interval_ms) {
-			decision_kbps = runtime.current_kbps - s->step_size_kbps;
+			decision_kbps =
+				runtime.current_kbps - s->step_size_kbps;
 			if (decision_kbps < runtime.floor_kbps)
 				decision_kbps = runtime.floor_kbps;
-			decision = "step-down";
+			/* Hard clamp at the ceiling when reason is "above ceiling". */
+			if (above_ceiling &&
+			    decision_kbps < runtime.target_kbps)
+				decision_kbps = runtime.target_kbps;
+			decision = above_ceiling
+					   ? "step-down (ceiling)"
+					   : "step-down";
 			last_step_down_ms = t;
 		} else if (new_state == CM_HEALTHY &&
 			   runtime.current_kbps < runtime.target_kbps) {
@@ -273,6 +287,17 @@ void cm_monitor_shutdown(void)
 
 void cm_monitor_on_streaming_started(void)
 {
+	/* If a selftest is in flight, abort it cleanly so it doesn't fight
+	 * the real stream. Selftest curve injects fake congestion which
+	 * would otherwise drive bogus bitrate decisions on the live encoder. */
+	if (selftest_active) {
+		blog(LOG_INFO,
+		     CM_LOG_PREFIX "selftest aborted by stream start");
+		selftest_active = false;
+		cm_monitor_clear_test_congestion();
+		stop_thread();
+	}
+
 	streaming_start_ms = now_ms();
 	last_step_down_ms = 0;
 	last_step_up_ms = 0;
@@ -302,6 +327,10 @@ void cm_monitor_on_streaming_started(void)
 	pthread_mutex_lock(&state_lock);
 	runtime.streaming = true;
 	runtime.state = CM_HEALTHY;
+	runtime.target_kbps = s->upper_kbps;
+	runtime.current_kbps = cm_bitrate_get_current_kbps();
+	if (runtime.current_kbps == 0)
+		runtime.current_kbps = cm_bitrate_get_target_kbps();
 	pthread_mutex_unlock(&state_lock);
 
 	start_thread_if_needed();
@@ -368,7 +397,7 @@ static void *selftest_thread_fn(void *arg)
 	selftest_active = true;
 	start_thread_if_needed();
 
-	for (int i = 0; i < selftest_steps && !stop_requested; i++) {
+	for (int i = 0; i < selftest_steps && !stop_requested && selftest_active; i++) {
 		selftest_step = i;
 		float v = selftest_curve[i];
 		cm_monitor_set_test_congestion(v);
@@ -378,8 +407,39 @@ static void *selftest_thread_fn(void *arg)
 	cm_monitor_clear_test_congestion();
 	os_sleep_ms(500);
 
-	stop_thread();
+	bool was_active = selftest_active;
 	selftest_active = false;
+
+	/* Don't yank the carpet from under an active stream. */
+	obs_output_t *out = obs_frontend_get_streaming_output();
+	bool obs_streaming = (out != NULL && obs_output_active(out));
+	if (out)
+		obs_output_release(out);
+
+	if (obs_streaming) {
+		blog(LOG_INFO,
+		     CM_LOG_PREFIX
+		     "selftest END (stream active, leaving monitor running)");
+		cm_log_event("selftest finished (stream still active)");
+		cm_log_close();
+		/* Reattach to the live encoder so target/current reflect reality. */
+		obs_output_t *output = obs_frontend_get_streaming_output();
+		if (output) {
+			cm_bitrate_attach(output);
+			obs_output_release(output);
+		}
+		pthread_mutex_lock(&state_lock);
+		runtime.state = CM_HEALTHY;
+		runtime.streaming = true;
+		runtime.current_kbps = cm_bitrate_get_current_kbps();
+		runtime.target_kbps = cm_settings_current()->upper_kbps;
+		pthread_mutex_unlock(&state_lock);
+		/* Don't stop_thread — let the live monitor continue. */
+		(void)was_active;
+		return NULL;
+	}
+
+	stop_thread();
 
 	pthread_mutex_lock(&state_lock);
 	runtime.streaming = false;
