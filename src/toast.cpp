@@ -39,9 +39,8 @@ static void on_breaking(bool entering, const cm_runtime_state *state, void *)
 
 	QString title = "OBS stream is breaking";
 	QString body = QString(
-		"Bitrate %1 kbps, floor %2 kbps, congestion %3%")
+		"Stream dropped to %1 kbps. Network congestion %2%.")
 		.arg(state ? state->current_kbps : 0)
-		.arg(state ? state->floor_kbps : 0)
 		.arg(state ? (int)(state->congestion * 100.0f) : 0);
 
 	QMetaObject::invokeMethod(

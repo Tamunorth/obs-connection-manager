@@ -19,6 +19,18 @@
 #include "cm-types.h"
 #include <util/platform.h>
 
+static QString human_state(enum cm_state s)
+{
+	switch (s) {
+	case CM_HEALTHY:   return QStringLiteral("Healthy");
+	case CM_AT_FLOOR:  return QStringLiteral("Floor reached");
+	case CM_BREAKING:  return QStringLiteral("Stream breaking");
+	case CM_IDLE:
+	case CM_DEGRADING:
+	default:           return QString::fromUtf8(cm_state_name(s));
+	}
+}
+
 class CmDock : public QWidget {
 public:
 	CmDock(QWidget *parent = nullptr) : QWidget(parent)
@@ -181,7 +193,7 @@ public:
 				cong_bar->setValue(cong);
 				cong_bar->setStyleSheet(cong_style(s.congestion));
 
-				state_label->setText(cm_state_name(s.state));
+				state_label->setText(human_state(s.state));
 				state_label->setStyleSheet(state_style(s.state));
 			},
 			Qt::QueuedConnection);
